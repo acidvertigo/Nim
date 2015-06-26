@@ -483,7 +483,7 @@ when defined(windows) or defined(nimdoc):
                   RemoteSockaddr, RemoteSockaddrLength)
 
   proc connect*(socket: AsyncFD, address: string, port: Port,
-    af = AF_INET): Future[void] =
+    af = rawsockets.AF_INET): Future[void] =
     ## Connects ``socket`` to server at ``address:port``.
     ##
     ## Returns a ``Future`` which will complete when the connection succeeds
@@ -861,7 +861,7 @@ when defined(windows) or defined(nimdoc):
     result.SocketHandle.setBlocking(false)
     register(result)
 
-  proc newAsyncRawSocket*(domain: Domain = AF_INET,
+  proc newAsyncRawSocket*(domain: Domain = rawsockets.AF_INET,
                typ: SockType = SOCK_STREAM,
                protocol: Protocol = IPPROTO_TCP): AsyncFD =
     ## Creates a new socket and registers it with the dispatcher implicitly.
@@ -1009,7 +1009,7 @@ else:
     processTimers(p)
 
   proc connect*(socket: AsyncFD, address: string, port: Port,
-    af = AF_INET): Future[void] =
+    af_unused = AF_INET): Future[void] =
     var retFuture = newFuture[void]("connect")
 
     proc cb(fd: AsyncFD): bool =
@@ -1017,7 +1017,8 @@ else:
       retFuture.complete()
       return true
 
-    var aiList = getAddrInfo(address, port, af)
+    var sockDomain = getSockDomain(socket.SocketHandle)
+    var aiList = getAddrInfo(address, port, sockDomain)
     var success = false
     var lastError: OSErrorCode
     var it = aiList
@@ -1135,7 +1136,7 @@ else:
         client: AsyncFD]]("acceptAddr")
     proc cb(sock: AsyncFD): bool =
       result = true
-      var sockAddress: SockAddr_in
+      var sockAddress: Sockaddr_storage
       var addrLen = sizeof(sockAddress).Socklen
       var client = accept(sock.SocketHandle,
                           cast[ptr SockAddr](addr(sockAddress)), addr(addrLen))
@@ -1151,7 +1152,7 @@ else:
             retFuture.fail(newException(OSError, osErrorMsg(lastError)))
       else:
         register(client.AsyncFD)
-        retFuture.complete(($inet_ntoa(sockAddress.sin_addr), client.AsyncFD))
+        retFuture.complete((getAddrString(cast[ptr SockAddr](addr sockAddress)), client.AsyncFD))
     addRead(socket, cb)
     return retFuture
 
